@@ -5,10 +5,116 @@ from pathlib import Path
 
 import click
 
+
+import json
+import urllib.request
+import urllib.error
+from collections import deque
+
 LINE_RE = re.compile(r"^(?P<ts>\S+ \S+) (?P<level>[A-Z]+) (?P<msg>.*)$")
 
 counts: Counter = Counter()
 history: list[dict] = []
+
+
+# Error-spike detection configuration - for Future Implementation
+ERROR_THRESHOLD = 5
+ERROR_WINDOW_SECONDS = 60
+
+# Stores timestamps of recent ERROR entries.
+ERROR_TIMESTAMPS = deque()
+
+# Telegram credentials: configure before enabling notifications - for Future Implementation
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_TELEGRAM_CHAT_ID"
+
+# For Future Implementation
+def detect_error_spike(
+    threshold: int = ERROR_THRESHOLD,
+    window_seconds: int = ERROR_WINDOW_SECONDS,
+    now: float | None = None,
+) -> bool:
+    """Return True when the threshold is reached within the time window.
+
+    Call this function once for each ERROR log entry when the
+    feature is activated in the future.
+    """
+    if threshold < 1:
+        raise ValueError("threshold must be at least 1")
+
+    if window_seconds < 1:
+        raise ValueError("window_seconds must be at least 1")
+
+    current_time = time.monotonic() if now is None else now
+
+    # Remove errors that are outside the configured time window.
+    while (
+        ERROR_TIMESTAMPS
+        and current_time - ERROR_TIMESTAMPS[0] > window_seconds
+    ):
+        ERROR_TIMESTAMPS.popleft()
+
+    # Record the timestamp of the current ERROR.
+    ERROR_TIMESTAMPS.append(current_time)
+
+    # Trigger only when the threshold is reached, not on every
+    # subsequent error in the same burst.
+    return len(ERROR_TIMESTAMPS) == threshold
+
+# For Future Implementation
+def send_telegram_notification(message: str) -> None:
+    """Send a Telegram message using the Telegram Bot API.
+
+    Requires a valid bot token and chat ID.
+    This function is defined for future use and is not called yet.
+    """
+    if (
+        not TELEGRAM_BOT_TOKEN
+        or TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN"
+    ):
+        raise ValueError("Configure TELEGRAM_BOT_TOKEN first")
+
+    if (
+        not TELEGRAM_CHAT_ID
+        or TELEGRAM_CHAT_ID == "YOUR_TELEGRAM_CHAT_ID"
+    ):
+        raise ValueError("Configure TELEGRAM_CHAT_ID first")
+
+    url = (
+        f"https://api.telegram.org/bot"
+        f"{TELEGRAM_BOT_TOKEN}/sendMessage"
+    )
+
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+    }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+
+            if not result.get("ok"):
+                raise RuntimeError(
+                    "Telegram API rejected the notification"
+                )
+
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"Telegram HTTP request failed with status {exc.code}"
+        ) from None
+
+    except urllib.error.URLError:
+        raise RuntimeError(
+            "Unable to connect to Telegram"
+        ) from None
 
 
 def parse(line: str):
@@ -29,6 +135,19 @@ def process_line(line: str):
     if entry:
         counts[entry["level"]] += 1
         history.append(entry)
+        if entry["level"] == "ERROR":
+            # FUTURE IMPLEMENTATION:
+            # Detect whether the error threshold has been reached.
+            #if detect_error_spike():
+                # Send a Telegram notification only when a spike is detected.
+                #send_telegram_notification(
+                    #f"LogWatcher alert: {ERROR_THRESHOLD} errors "
+                    #f"detected within {ERROR_WINDOW_SECONDS} seconds.\n"
+                    #f"Latest error: {entry['msg']}\n"
+                    #f"Timestamp: {entry['ts']}"
+                #)
+            pass
+
 
     return entry
 
